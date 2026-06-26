@@ -1,0 +1,9 @@
+[deps]
+UnsteadyKineticRotorDynamics = "51f0175b-34ed-4c43-bdd0-6e07bed75fb5"
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+LiveServer = "16fef848-5104-11e9-1b77-fb7a48bbb589"
+
+[compat]
+UnsteadyKineticRotorDynamics = "0.1"
+Documenter = "1"
+LiveServer = "1"
