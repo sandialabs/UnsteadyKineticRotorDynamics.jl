@@ -15,7 +15,7 @@ implemented as low-pass time-domain dynamics around steady CCBlade solves.
 
 ```julia
 using Pkg
-Pkg.add(url = "https://github.com/kevmoor/UnsteadyKineticRotorDynamics.jl")
+Pkg.add(url = "https://github.com/sandialabs/UnsteadyKineticRotorDynamics.jl")
 ```
 
 For local development from a checkout:

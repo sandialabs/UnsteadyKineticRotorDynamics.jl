@@ -18,7 +18,7 @@ doc_kwargs = Dict(
     :format => Documenter.HTML(
         prettyurls = is_ci,
         edit_link = "master",
-        repolink = "https://github.com/kevmoor/UnsteadyKineticRotorDynamics.jl",
+        repolink = "https://github.com/sandialabs/UnsteadyKineticRotorDynamics.jl",
     ),
     :pages => [
         "Home" => "index.md",
@@ -29,7 +29,7 @@ doc_kwargs = Dict(
 )
 
 if is_ci
-    doc_kwargs[:repo] = "github.com/kevmoor/UnsteadyKineticRotorDynamics.jl"
+    doc_kwargs[:repo] = "github.com/sandialabs/UnsteadyKineticRotorDynamics.jl"
 else
     doc_kwargs[:remotes] = nothing
 end
@@ -38,7 +38,7 @@ makedocs(; doc_kwargs...)
 
 if is_ci
     deploydocs(
-        repo="github.com/kevmoor/UnsteadyKineticRotorDynamics.jl.git",
+        repo="github.com/sandialabs/UnsteadyKineticRotorDynamics.jl.git",
         devbranch="master",
     )
 end
