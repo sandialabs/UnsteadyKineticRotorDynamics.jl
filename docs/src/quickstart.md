@@ -6,7 +6,7 @@ UnsteadyKineticRotorDynamics wraps steady CCBlade solves with a low-pass time fi
 
 ```julia
 using Pkg
-Pkg.add(url = "https://github.com/kevmoor/UnsteadyKineticRotorDynamics.jl")
+Pkg.add(url = "https://github.com/sandialabs/UnsteadyKineticRotorDynamics.jl")
 ```
 
 ## Basic Unsteady Stepping
