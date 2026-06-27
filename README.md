@@ -1,5 +1,11 @@
 # UnsteadyKineticRotorDynamics.jl
 
+[![Tests](https://github.com/sandialabs/UnsteadyKineticRotorDynamics.jl/actions/workflows/CI.yml/badge.svg?branch=master)](https://github.com/sandialabs/UnsteadyKineticRotorDynamics.jl/actions/workflows/CI.yml)
+[![Docs](https://github.com/sandialabs/UnsteadyKineticRotorDynamics.jl/actions/workflows/Docs.yml/badge.svg?branch=master)](https://sandialabs.github.io/UnsteadyKineticRotorDynamics.jl/dev/)
+[![Coverage](https://codecov.io/gh/sandialabs/UnsteadyKineticRotorDynamics.jl/branch/master/graph/badge.svg)](https://codecov.io/gh/sandialabs/UnsteadyKineticRotorDynamics.jl)
+
+Documentation is hosted at [sandialabs.github.io/UnsteadyKineticRotorDynamics.jl/dev/](https://sandialabs.github.io/UnsteadyKineticRotorDynamics.jl/dev/).
+
 **Summary**: Unsteady kinetic rotor dynamics for wind and hydrokinetic rotors,
 implemented as low-pass time-domain dynamics around steady CCBlade solves.
 
