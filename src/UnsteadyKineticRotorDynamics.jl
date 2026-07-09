@@ -8,6 +8,8 @@ using StructArrays: StructArray
 
 export UnsteadyParams, UnsteadyState
 export simple_blade_element_rotor, windturbine_op_motion
+export windturbine_op_motion_tsr, settled_windturbine_loads, calibrate_windturbine_tsr
+export azimuth_unsteady_states, azimuth_averaged_unsteady_loads_step!
 export rotor_loads, unsteady_loads_step, unsteady_loads_step!, unsteady_step, unsteady_step!
 
 # Low-pass unsteady stepping utilities layered on steady CCBlade solves.
@@ -459,6 +461,223 @@ function windturbine_op_motion(Vhub, Omega, pitch, r, precone, yaw, tilt, azimut
         hubHt_eff = hubHt_eff)
 
     return ops, info
+end
+
+"""
+    windturbine_op_motion_tsr(Vhub, tsr, pitch, r, precone, yaw, tilt, azimuth,
+        hubHt, shearExp, rho; rotor_radius, kwargs...)
+
+Compute moving-base wind-turbine operating points for a tip-speed-ratio command.
+The rotor speed is first estimated from the freestream hub wind speed, then
+recomputed from the effective moving-hub wind speed returned by
+[`windturbine_op_motion`](@ref). Returns `(ops, info, omega)`.
+"""
+function windturbine_op_motion_tsr(Vhub, tsr, pitch, r, precone, yaw, tilt, azimuth,
+        hubHt, shearExp, rho; rotor_radius, kwargs...)
+    if !(rotor_radius > zero(rotor_radius))
+        throw(ArgumentError("rotor_radius must be positive"))
+    end
+
+    nominal_omega = tsr * Vhub / rotor_radius
+    _, probe_info = windturbine_op_motion(
+        Vhub, nominal_omega, pitch, r, precone, yaw, tilt, azimuth, hubHt, shearExp,
+        rho; kwargs...)
+
+    omega = tsr * probe_info.Vhub_eff / rotor_radius
+    ops, info = windturbine_op_motion(
+        Vhub, omega, pitch, r, precone, yaw, tilt, azimuth, hubHt, shearExp, rho;
+        kwargs...)
+
+    return ops, info, omega
+end
+
+"""
+    settled_windturbine_loads(rotor, sections, r; tsr, Vhub, hub_height, dt, kwargs...)
+
+Return steady-like integrated loads for a wind turbine by repeatedly applying the
+unsteady low-pass model at a fixed operating point. This is useful for controller
+or generator scaling studies that need a settled shaft power and thrust from the
+same unsteady model used in time marching.
+"""
+function settled_windturbine_loads(rotor, sections, r;
+        tsr,
+        Vhub,
+        hub_height,
+        dt,
+        rotor_radius = rotor.Rtip,
+        pitch = zero(Vhub),
+        precone = zero(Vhub),
+        yaw = zero(Vhub),
+        tilt = zero(Vhub),
+        azimuth = zero(Vhub),
+        shear_exp = zero(Vhub),
+        rho = one(Vhub),
+        params = UnsteadyParams(0.3, 3.0),
+        settling_steps::Integer = 100,
+        kwargs...)
+    if settling_steps < 1
+        throw(ArgumentError("settling_steps must be at least 1"))
+    end
+
+    ops, info, omega = windturbine_op_motion_tsr(
+        Vhub, tsr, pitch, r, precone, yaw, tilt, azimuth, hub_height, shear_exp,
+        rho; rotor_radius = rotor_radius, kwargs...)
+    state = UnsteadyState(sections, ops; V_wake_old = info.Vhub_eff)
+    snapshot = nothing
+
+    for _ in 1:settling_steps
+        snapshot = unsteady_loads_step!(
+            state, rotor, sections, ops, params; dt = dt, omega = omega)
+    end
+
+    return snapshot
+end
+
+"""
+    calibrate_windturbine_tsr(rotor, sections, r; tsr_values, Vhub, hub_height, dt, kwargs...)
+
+Sweep tip-speed-ratio values, return the settled-load optimum, and optionally
+derive a shaft-power scale for a requested `target_power_w`.
+"""
+function calibrate_windturbine_tsr(rotor, sections, r;
+        tsr_values,
+        Vhub,
+        hub_height,
+        dt,
+        target_power_w = nothing,
+        rotor_radius = rotor.Rtip,
+        pitch = zero(Vhub),
+        precone = zero(Vhub),
+        yaw = zero(Vhub),
+        tilt = zero(Vhub),
+        shear_exp = zero(Vhub),
+        rho = one(Vhub),
+        params = UnsteadyParams(0.3, 3.0),
+        settling_steps::Integer = 100,
+        kwargs...)
+    tsr_grid = collect(tsr_values)
+    if isempty(tsr_grid)
+        throw(ArgumentError("tsr_values must contain at least one value"))
+    end
+
+    raw_loads = [
+        settled_windturbine_loads(
+            rotor, sections, r;
+            tsr = tsr,
+            Vhub = Vhub,
+            hub_height = hub_height,
+            dt = dt,
+            rotor_radius = rotor_radius,
+            pitch = pitch,
+            precone = precone,
+            yaw = yaw,
+            tilt = tilt,
+            shear_exp = shear_exp,
+            rho = rho,
+            params = params,
+            settling_steps = settling_steps,
+            kwargs...)
+        for tsr in tsr_grid
+    ]
+    raw_powers = [load.shaft_power_w for load in raw_loads]
+    best_index = argmax(raw_powers)
+    raw_power_w = raw_loads[best_index].shaft_power_w
+    if !(raw_power_w > zero(raw_power_w))
+        throw(ArgumentError("best settled shaft power must be positive"))
+    end
+    power_scale = isnothing(target_power_w) ?
+                  one(raw_power_w) :
+                  min(one(raw_power_w), target_power_w / raw_power_w)
+
+    return (
+        Vhub = Vhub,
+        rotor_radius = rotor_radius,
+        hub_height = hub_height,
+        pitch = pitch,
+        precone = precone,
+        yaw = yaw,
+        tilt = tilt,
+        shear_exp = shear_exp,
+        rho = rho,
+        params = params,
+        tsr_values = tsr_grid,
+        raw_loads = raw_loads,
+        raw_powers = raw_powers,
+        optimal_tsr = tsr_grid[best_index],
+        steady_raw_power_w = raw_power_w,
+        steady_raw_thrust_n = raw_loads[best_index].thrust_n,
+        target_power_w = target_power_w,
+        power_scale = power_scale,
+    )
+end
+
+"""
+    azimuth_unsteady_states(sections, azimuths, operating_point)
+
+Create one [`UnsteadyState`](@ref) per azimuth. `operating_point(azimuth)` must
+return `(ops, info, omega)`, with `info.Vhub_eff` used as the initial wake speed.
+"""
+function azimuth_unsteady_states(sections, azimuths, operating_point)
+    return [
+        begin
+            ops, info, _ = operating_point(azimuth)
+            UnsteadyState(sections, ops; V_wake_old = info.Vhub_eff)
+        end
+        for azimuth in azimuths
+    ]
+end
+
+"""
+    azimuth_averaged_unsteady_loads_step!(
+        states, rotor, sections, params, azimuths, operating_point; dt,
+        shaft_power_scale=1)
+
+Advance one unsteady rotor state per azimuth and return azimuth-averaged thrust,
+torque, raw shaft power, and scaled shaft power. `operating_point(azimuth)` must
+return `(ops, info, omega)`.
+"""
+function azimuth_averaged_unsteady_loads_step!(
+        states, rotor, sections, params::UnsteadyParams, azimuths, operating_point;
+        dt,
+        shaft_power_scale = 1)
+    n_azimuths = length(azimuths)
+    if n_azimuths < 1
+        throw(ArgumentError("azimuths must contain at least one value"))
+    end
+    if length(states) != n_azimuths
+        throw(ArgumentError("states and azimuths must have the same length"))
+    end
+
+    total_power = nothing
+    total_raw_power = nothing
+    total_thrust = nothing
+    total_torque = nothing
+
+    for (i, azimuth) in pairs(azimuths)
+        ops, _, omega = operating_point(azimuth)
+        snapshot = unsteady_loads_step!(
+            states[i], rotor, sections, ops, params; dt = dt, omega = omega)
+        scaled_power = shaft_power_scale * snapshot.shaft_power_w
+
+        if total_power === nothing
+            total_power = scaled_power
+            total_raw_power = snapshot.shaft_power_w
+            total_thrust = snapshot.thrust_n
+            total_torque = snapshot.torque_nm
+        else
+            total_power += scaled_power
+            total_raw_power += snapshot.shaft_power_w
+            total_thrust += snapshot.thrust_n
+            total_torque += snapshot.torque_nm
+        end
+    end
+
+    return (
+        shaft_power_w = total_power / n_azimuths,
+        raw_shaft_power_w = total_raw_power / n_azimuths,
+        thrust_n = total_thrust / n_azimuths,
+        torque_nm = total_torque / n_azimuths,
+    )
 end
 
 """
